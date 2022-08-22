@@ -6,20 +6,30 @@ const fetchData = async (searchTerm) => {
     },
   });
 
-  console.log(response.data);
+  if (response.data.Error) {
+    return [];
+  }
+
+  return response.data.Search;
 };
 
 const input = document.querySelector("input");
-let timeoutId;
-const onInput = (event) => {
-  //this clears timeoutId, and assign new one straight after with setTimeout
-  //it is called "Debouncing an input"
-  if (timeoutId) {
-    clearTimeout(timeoutId);
+
+// if we use that async function in another function you get a promise back so you need to repeat the async/await to unpack the promise until you do not need it anymore
+const onInput = async (event) => {
+  const movies = await fetchData(event.target.value);
+
+  console.log(movies);
+  for (let movie of movies) {
+    const div = document.createElement("div");
+
+    div.innerHTML = `
+    <img src= ${movie.Poster} />
+    <h1>${movie.Title}</h1>
+    `;
+    console.log(movie.Title, movie.Poster);
+    document.querySelector("#target").appendChild(div);
   }
-  //waiting a 1 sec to fetch data when user taping inside search
-  timeoutId = setTimeout(() => {
-    fetchData(event.target.value);
-  }, 1000);
 };
-input.addEventListener("input", onInput);
+
+input.addEventListener("input", debounce(onInput, 900));
