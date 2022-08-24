@@ -1,87 +1,123 @@
-const fetchData = async (searchTerm) => {
-  const response = await axios.get("http://www.omdbapi.com/", {
-    params: {
-      apikey: "9aaa6b0a",
-      s: searchTerm,
-    },
-  });
-
-  if (response.data.Error) {
-    return [];
-  }
-
-  return response.data.Search;
-};
-
-//CSS feature use Bulma CSS
-const autoCompleteWidget = document.querySelector(".autocomplete");
-autoCompleteWidget.innerHTML = `
-<label><b>Search For a Movie</b></label>
-<input class="input"/>
-<div class="dropdown">
-  <div class="dropdown-menu">
-    <div class="dropdown-content results"></div>
-  </div>
-</div>
-`;
-const input = document.querySelector("input");
-const dropdown = document.querySelector(".dropdown");
-const resultsWrapper = document.querySelector(".results");
-
-// if we use that async function in another function you get a promise back so you need to repeat the async/await to unpack the promise until you do not need it anymore
-const onInput = async (event) => {
-  const movies = await fetchData(event.target.value);
-  //removes empty dropdown
-  if (!movies.length) {
-    dropdown.classList.remove("is-active");
-    return;
-  }
-
-  resultsWrapper.innerHTML = "";
-  dropdown.classList.add("is-active");
-  for (let movie of movies) {
-    const movieOption = document.createElement("a");
+const autoCompleteConfig = {
+  renderOption(movie) {
     const imgSrc = movie.Poster === "N/A" ? "" : movie.Poster;
-
-    movieOption.classList.add("dropdown-item");
-    movieOption.innerHTML = `
-    <img src= ${imgSrc} />
-    ${movie.Title}
+    return `<img src= ${imgSrc} />
+    ${movie.Title} (${movie.Year})
     `;
-    console.log(movie.Title, movie.Poster);
-    resultsWrapper.appendChild(movieOption);
+  },
 
-    //when clicked removes searched list and fill input field with full movie name
-    //makes another fetch request for detailed info about selected movie
-    movieOption.addEventListener("click", () => {
-      dropdown.classList.remove("is-active");
-      input.value = movie.Title;
-      onMovieSelect(movie);
+  inputValue(movie) {
+    return movie.Title;
+  },
+
+  async fetchData(searchTerm) {
+    const response = await axios.get("http://www.omdbapi.com/", {
+      params: {
+        apikey: "9aaa6b0a",
+        s: searchTerm,
+      },
     });
-  }
+
+    if (response.data.Error) {
+      return [];
+    }
+
+    return response.data.Search;
+  },
 };
 
-input.addEventListener("input", debounce(onInput, 900));
-
-//hides dropdown menu when user click somewhere outside dropdown menu
-document.addEventListener("click", (event) => {
-  if (!autoCompleteWidget.contains(event.target)) {
-    dropdown.classList.remove("is-active");
-  }
+createAutoComplete({
+  ...autoCompleteConfig,
+  autoCompleteWidget: document.querySelector("#left-autocomplete"),
+  onOptionSelect(movie) {
+    document.querySelector(".tutorial").classList.add("is-hidden");
+    onMovieSelect(movie, document.querySelector("#left-summary"), "left");
+  },
 });
 
+createAutoComplete({
+  ...autoCompleteConfig,
+  autoCompleteWidget: document.querySelector("#right-autocomplete"),
+  onOptionSelect(movie) {
+    document.querySelector(".tutorial").classList.add("is-hidden");
+    onMovieSelect(movie, document.querySelector("#right-summary"), "right");
+  },
+});
+
+let leftMovie;
+let rightMovie;
+
 //makes another fetch request to get detailed info about selected movie
-const onMovieSelect = async (movie) => {
+const onMovieSelect = async (movie, summaryElement, side) => {
   const response = await axios.get("http://www.omdbapi.com/", {
     params: {
       apikey: "9aaa6b0a",
       i: movie.imdbID,
     },
   });
-  document.querySelector("#summary").innerHTML = movieTemplate(response.data);
+  summaryElement.innerHTML = movieTemplate(response.data);
+
+  if (side === "left") {
+    leftMovie = response.data;
+  } else {
+    rightMovie = response.data;
+  }
+
+  if (leftMovie && rightMovie) {
+    runComparison();
+  }
+};
+
+const runComparison = () => {
+  const leftSideStats = document.querySelectorAll(
+    "#left-summary .notification"
+  );
+  const rightSideStats = document.querySelectorAll(
+    "#right-summary .notification"
+  );
+  //this is clever solution below.
+  //   Data attributes are a feature of HTML5. They allow us to assign additional information on HTML elements. We can write these by using data-* - with the * representing any name you wish to give. So we have assigned the article HTML element an additional attribute of data-value
+  // Now we can access those via javascript - we just need to use dataset so JavaScript knows what we're looking for, and then anything after the dash in your HTML can be searched for by using dot notation in javascript.
+  leftSideStats.forEach(function (leftStat, index) {
+    const rightStat = rightSideStats[index];
+
+    const leftSideValue = parseFloat(leftStat.dataset.value);
+    const rightSideValue = parseFloat(rightStat.dataset.value);
+
+    if (rightSideValue > leftSideValue) {
+      leftStat.classList.remove("is-primary");
+      leftStat.classList.add("is-warning");
+      rightStat.classList.remove("is-warning");
+      rightStat.classList.add("is-primary");
+    } else {
+      rightStat.classList.remove("is-primary");
+      rightStat.classList.add("is-warning");
+      leftStat.classList.add("is-primary");
+      leftStat.classList.remove("is-warning");
+    }
+
+    console.log(leftSideValue, rightSideValue);
+  });
 };
 
 const movieTemplate = (movieDetail) => {
+  const dollars = parseInt(
+    movieDetail.BoxOffice.replace(/\$/g, "").replace(/,/g, "")
+  );
+  const metascore = parseInt(movieDetail.Metascore);
+  const imdbRating = parseFloat(movieDetail.imdbRating);
+  const imdbVotes = parseInt(movieDetail.imdbVotes.replace(/,/g, ""));
+
+  const awards = movieDetail.Awards.split(" ").reduce((prev, word) => {
+    const value = parseInt(word);
+    if (isNaN(value)) {
+      return prev;
+    } else {
+      return prev + value;
+    }
+  }, 0);
+  console.log(awards, dollars, metascore, imdbRating, imdbVotes);
+
   return `
   <article class="media">
     <figure class="media-left>
@@ -97,23 +133,23 @@ const movieTemplate = (movieDetail) => {
     </div>
    </div>
   </article>
-  <article class="notification is-primary">
+  <article data-value=${awards} class="notification is-primary">
     <p class="title">${movieDetail.Awards}</p>
     <p class="subtitle">Awards</p>
   </article>
-  <article class="notification is-primary">
+  <article data-value=${dollars} class="notification is-primary">
   <p class="title">${movieDetail.BoxOffice}</p>
   <p class="subtitle">Box Office</p>
 </article>
-<article class="notification is-primary">
+<article data-value=${metascore} class="notification is-primary">
   <p class="title">${movieDetail.Metascore}</p>
   <p class="subtitle">Metascore</p>
 </article>
-<article class="notification is-primary">
+<article data-value=${imdbRating} class="notification is-primary">
   <p class="title">${movieDetail.imdbRating}</p>
   <p class="subtitle">IMDB rating</p>
 </article>
-<article class="notification is-primary">
+<article data-value=${imdbVotes} class="notification is-primary">
   <p class="title">${movieDetail.imdbVotes}</p>
   <p class="subtitle">IMBD Votes</p>
 </article>
